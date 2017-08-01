@@ -2,139 +2,155 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <cuda_device_runtime_api.h>
-#include <cooperative_groups.h>
 #include <iostream>
 #include <stdexcept>
 #include <limits>
 
-/*
- * Reducing on warp level using implicit warp synchronisation.
- * (Not really recommended to rely on implicit warp synchronisation, but will be tackled with future CUDA >8)
- */
-template <unsigned int TBlocksize, typename T>
-inline
-__device__ void warpReduce(volatile T *sdata, unsigned int tid) {
-  if (TBlocksize >= 64) sdata[tid] += sdata[tid + 32];
-  if (TBlocksize >= 32) sdata[tid] += sdata[tid + 16];
-  if (TBlocksize >= 16) sdata[tid] += sdata[tid + 8];
-  if (TBlocksize >= 8) sdata[tid] += sdata[tid + 4];
-  if (TBlocksize >= 4) sdata[tid] += sdata[tid + 2];
-  if (TBlocksize >= 2) sdata[tid] += sdata[tid + 1];
+
+template<int TBlocksize, typename T>
+__device__
+void reduce(int tid, T *x) {
+
+#pragma unroll
+  for(int bs=1024; bs>1; bs=bs/2) {
+    if( TBlocksize >= bs ) {
+      if(tid < bs/2)
+        x[tid] += x[tid + bs/2];
+      __syncthreads();
+    }
+  }
 }
 
-/*
- * Optimized reduction (addition) with GPU in shared memory.
- *
- * @param g_idata input (array in global GPU memory)
- * @param g_odata output (array in global GPU memory)
- * @param n number of elements to be processed
- */
-template <unsigned int TBlocksize, typename T>
-__global__ void
-reduceAddGPUsmem(T *g_idata, T *g_odata, unsigned int n)
-{
+template<int TBlocksize, typename T>
+__device__
+T reduce(int tid, T *x, int n) {
+
   __shared__ T sdata[TBlocksize];
-  unsigned int tid = threadIdx.x;
-  unsigned int i = 4*blockIdx.x*TBlocksize + tid;
-  unsigned int gridSize = 4*TBlocksize*gridDim.x;
+
+  //int i = 4 * blockIdx.x * TBlocksize + threadIdx.x;
+  //int i = 4 * my_block.group_index().x * TBlocksize + lane;
+  int i = 4 * blockIdx.x * TBlocksize + tid;
+
   sdata[tid] = 0;
-  // reduce per thread with increased ILP by 4x unrolling sum
+
+  // --------
+  // Level 1: block reduce
+  // --------
+
+  // reduce per thread with increased ILP by 4x unrolling sum.
+  // the thread of our block reduces its 4 block-neighbored threads and advances by grid-striding loop
   while (i+3*TBlocksize < n) {
-    sdata[tid] += g_idata[i] + g_idata[i+TBlocksize] + g_idata[i+2*TBlocksize] + g_idata[i+3*TBlocksize];
-    i += gridSize;
+    sdata[tid] += x[i] + x[i+TBlocksize] + x[i+2*TBlocksize] + x[i+3*TBlocksize];
+    i += 4*gridDim.x*TBlocksize;
   }
-  // doing the rest
+
+  // doing the remaining blocks
   while(i<n) {
-    sdata[tid] += g_idata[i];
-    i += TBlocksize*gridDim.x;
+    sdata[tid] += x[i];
+    i += gridDim.x * TBlocksize;
   }
 
   __syncthreads();
-  // block reduce
-  if (TBlocksize >= 512) { if (tid < 256) { sdata[tid] += sdata[tid + 256]; } __syncthreads(); }
-  if (TBlocksize >= 256) { if (tid < 128) { sdata[tid] += sdata[tid + 128]; } __syncthreads(); }
-  if (TBlocksize >= 128) { if (tid < 64) { sdata[tid] += sdata[tid + 64]; } __syncthreads(); }
-  // warp reduce
-  if (tid < 32)
-    warpReduce<TBlocksize>(sdata, tid);
-  // store block sum to gmem
-  if (tid == 0)
-    g_odata[blockIdx.x] = sdata[0];
 
+  // --------
+  // Level 2: block + warp reduce
+  // --------
+
+  reduce<TBlocksize>(tid, sdata);
+
+  return sdata[0];
 }
 
-template<unsigned TBlocksize, typename T, int TRuns>
-void runReduceAddGPUsmem(unsigned n)
+// TBlocksize must be power-of-2
+template<int TBlocksize, typename T>
+__global__
+void kernel_reduce(T* x, T* y, int n)
 {
-  T *h_idata = new T[n];
-  for (int i = 0; i < n; i++) {
-    h_idata[i] = 1;
-  }
+  T block_result = reduce<TBlocksize>(threadIdx.x, x, n);
 
+  // store block result to gmem
+  if (threadIdx.x == 0)
+    y[blockIdx.x] = block_result;
+//    y[my_block.group_index().x] = block_result;
+}
+
+
+template<typename T, int TRuns, int TBlocksize>
+void reduce(T init, size_t n, int dev) {
+
+  CHECK_CUDA( cudaSetDevice(dev) );
+  cudaDeviceProp prop;
+  CHECK_CUDA( cudaGetDeviceProperties(&prop, dev) );
   cudaEvent_t cstart, cend;
-  // get number of streaming multiprocessors for our grid-striding loop
-  int numSMs;
-  int devId = 0;
-  cudaDeviceGetAttribute(&numSMs, cudaDevAttrMultiProcessorCount, devId);
-
-  int numBlocks=min((n-1)/TBlocksize+1, 64*numSMs);
-
-  /* allocate device memory and data */
-  T *d_idata = NULL;
-  T *d_blocksums = NULL;
-  T *d_odata = NULL;
-  CHECK_CUDA(cudaMalloc(&d_idata, n*sizeof(T)));
-  CHECK_CUDA(cudaMalloc(&d_blocksums, numBlocks*sizeof(T)));
-  CHECK_CUDA(cudaMalloc(&d_odata, sizeof(T)));
   CHECK_CUDA(cudaEventCreate(&cstart));
   CHECK_CUDA(cudaEventCreate(&cend));
+  cudaStream_t cstream;
+  CHECK_CUDA(cudaStreamCreate(&cstream));
 
-  // copy data directly to device memory
-  CHECK_CUDA(cudaMemcpy(d_idata, h_idata, n*sizeof(T), cudaMemcpyHostToDevice));
 
-  T result_gpu=0;
+  std::cout << getCUDADeviceInformations(dev).str();
+  std::cout << std::endl;
+
+  const int nr_dev = 1;
+
+  int numSMs;
+  cudaDeviceGetAttribute(&numSMs, cudaDevAttrMultiProcessorCount, dev);
+  dim3 blocks( 16*numSMs ); // factor must not exceed max number of active blocks per SM, otherwise runtime error will occur
+  if( blocks.x > (n-1)/TBlocksize+1 )
+    blocks.x = (n-1)/TBlocksize+1;
+
+  T* h_x = new T[n];;
+  T* x;
+  T* y;
+  CHECK_CUDA( cudaMalloc(&x, n*sizeof(T)) );
+  CHECK_CUDA( cudaMalloc(&y, nr_dev*blocks.x*sizeof(T)) );
+  for (int i = 0; i < n; i++) {
+    h_x[i] = init;
+  }
+  CHECK_CUDA( cudaMemcpy( x, h_x, n*sizeof(T), cudaMemcpyHostToDevice) );
+
+
   float milliseconds = 0;
   float min_ms = std::numeric_limits<float>::max();
-  CHECK_CUDA(cudaMemcpy(&result_gpu, d_odata, sizeof(T), cudaMemcpyDeviceToHost));
+  cudaLaunchParams params[1];
+  void* args[] = {(void*)&x, (void*)&y, (void*)&n};
 
-  for(int run=0; run<TRuns; ++run) {
-    CHECK_CUDA(cudaEventRecord(cstart));
-    // Operations within the same stream are ordered (FIFO) and cannot overlap, so no explicit sync needed
-    reduceAddGPUsmem<TBlocksize><<<numBlocks, TBlocksize>>>(d_idata, d_blocksums, n);
-    reduceAddGPUsmem<TBlocksize><<<1, TBlocksize>>>(d_blocksums, d_odata, numBlocks);
-    CHECK_CUDA(cudaEventRecord(cend));
-    CHECK_CUDA(cudaEventSynchronize(cend));
-    cudaEventElapsedTime(&milliseconds, cstart, cend);
+  for(int r=0; r<TRuns; ++r) {
+    CHECK_CUDA(cudaEventRecord(cstart, cstream));
+
+    kernel_reduce<TBlocksize><<<blocks, TBlocksize, 0, cstream>>>(x, y, n);
+    kernel_reduce<TBlocksize><<<1, TBlocksize, 0, cstream>>>(y, y, blocks.x);
+
+    CHECK_CUDA( cudaEventRecord(cend, cstream) );
+    CHECK_CUDA( cudaEventSynchronize(cend) );
+    CHECK_CUDA( cudaEventElapsedTime(&milliseconds, cstart, cend) );
     if(milliseconds<min_ms)
       min_ms = milliseconds;
   }
 
-  CHECK_CUDA(cudaMemcpy(&result_gpu, d_odata, sizeof(T), cudaMemcpyDeviceToHost));
-
-  CHECK_CUDA(cudaFree(d_idata));
-  CHECK_CUDA(cudaFree(d_odata));
-
-  CHECK_CUDA(cudaEventDestroy(cstart));
-  CHECK_CUDA(cudaEventDestroy(cend));
+  T result_gpu;
+  CHECK_CUDA( cudaMemcpy( &result_gpu, y, sizeof(T), cudaMemcpyDeviceToHost) );
 
   std::cout << "Result (n = "<<n<<"):\n"
             << "GPU: " << result_gpu << " (min kernels time = "<< min_ms <<" ms)\n"
-            << "expected: " << n <<"\n"
-            << (n != result_gpu ? "MISMATCH!!" : "success") << "\n"
-            << "max throughput: "<<n*sizeof(T)/min_ms*1e-6<<" GB/s"
+            << "expected: " << init*n <<"\n"
+            << (init*n != result_gpu ? "MISMATCH!!" : "Success") << "\n"
+            << "max bandwidth: "<<n*sizeof(T)/min_ms*1e-6<<" GB/s"
             << std::endl;
 
-  delete[] h_idata;
+  delete[] h_x;
+  CHECK_CUDA(cudaFree(x));
+  CHECK_CUDA(cudaFree(y));
+  CHECK_CUDA(cudaEventDestroy(cstart));
+  CHECK_CUDA(cudaEventDestroy(cend));
+  CHECK_CUDA(cudaStreamDestroy(cstream));
+
 }
 
-/*
- * The main()-function.
- */
-int main (int argc, char **argv)
+int main(void)
 {
-  unsigned n = 1<<26;
-  runReduceAddGPUsmem<128, unsigned, 5>(n);
-
+  int dev=0;
+  reduce<int,5, 128>(1, 1<<26, dev);
   CHECK_CUDA( cudaDeviceReset() );
   return 0;
 }
