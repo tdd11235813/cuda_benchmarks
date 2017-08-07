@@ -112,8 +112,6 @@ void reduce(T init, size_t n, int dev) {
 
   float milliseconds = 0;
   float min_ms = std::numeric_limits<float>::max();
-  cudaLaunchParams params[1];
-  void* args[] = {(void*)&x, (void*)&y, (void*)&n};
 
   for(int r=0; r<TRuns; ++r) {
     CHECK_CUDA(cudaEventRecord(cstart, cstream));
@@ -150,7 +148,7 @@ void reduce(T init, size_t n, int dev) {
 int main(void)
 {
   int dev=0;
-  reduce<int,5, 128>(1, 1<<26, dev);
+  reduce<int, 5, 128>(1, 1<<28, dev);
   CHECK_CUDA( cudaDeviceReset() );
   return 0;
 }

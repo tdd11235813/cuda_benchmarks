@@ -158,9 +158,11 @@ void reduce(T init, size_t n, int dev) {
   const int nr_dev = 1;
 
   dim3 threads( 128 );
+  int nbsm=0;
+  cudaOccupancyMaxActiveBlocksPerMultiprocessor(&nbsm, kernel_reduce<128,T>, threads.x, 0);
   int numSMs;
   cudaDeviceGetAttribute(&numSMs, cudaDevAttrMultiProcessorCount, dev);
-  dim3 blocks( 16*numSMs ); // factor must not exceed max number of active blocks per SM, otherwise runtime error will occur
+  dim3 blocks( nbsm*numSMs ); // factor must not exceed max number of active blocks per SM, otherwise runtime error will occur
   if( blocks.x > (n-1)/threads.x+1 )
     blocks.x = (n-1)/threads.x+1;
 
@@ -228,9 +230,9 @@ void reduce(T init, size_t n, int dev) {
 int main(void)
 {
   std::cout << "[Single-Grid]\n\n";
-  reduce<int,5, MultiGrid::NO>(1, 1<<26, 0);
+  reduce<int,5, MultiGrid::NO>(1, 1<<28, 0);
   std::cout << "\n[Multi-Grid]\n\n";
-  reduce<int,5, MultiGrid::YES>(1, 1<<26, 0);
+  reduce<int,5, MultiGrid::YES>(1, 1<<28, 0);
   CHECK_CUDA( cudaDeviceReset() );
   return 0;
 }

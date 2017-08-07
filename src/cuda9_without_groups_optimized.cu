@@ -130,7 +130,7 @@ void runReduceAddGPUsmem(unsigned n)
  */
 int main (int argc, char **argv)
 {
-  unsigned n = 1<<26;
+  unsigned n = 1<<28;
   runReduceAddGPUsmem<128, unsigned, 5>(n);
 
   CHECK_CUDA( cudaDeviceReset() );
