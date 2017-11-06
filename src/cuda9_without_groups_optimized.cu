@@ -33,18 +33,18 @@ reduceAddGPUsmem(T *g_idata, T *g_odata, unsigned int n)
 {
   __shared__ T sdata[TBlocksize];
   unsigned int tid = threadIdx.x;
-  unsigned int i = 4*blockIdx.x*TBlocksize + tid;
-  unsigned int gridSize = 4*TBlocksize*gridDim.x;
+  unsigned int i = blockIdx.x*TBlocksize + tid;
+  unsigned int gridSize = TBlocksize*gridDim.x;
   sdata[tid] = 0;
   // reduce per thread with increased ILP by 4x unrolling sum
-  while (i+3*TBlocksize < n) {
-    sdata[tid] += g_idata[i] + g_idata[i+TBlocksize] + g_idata[i+2*TBlocksize] + g_idata[i+3*TBlocksize];
-    i += gridSize;
+  while (i+3*gridSize < n) {
+    sdata[tid] += g_idata[i] + g_idata[i+gridSize] + g_idata[i+2*gridSize] + g_idata[i+3*gridSize];
+    i += 4*gridSize;
   }
   // doing the rest
   while(i<n) {
     sdata[tid] += g_idata[i];
-    i += TBlocksize*gridDim.x;
+    i += gridSize;
   }
 
   __syncthreads();
@@ -75,7 +75,7 @@ void runReduceAddGPUsmem(unsigned n)
   int devId = 0;
   cudaDeviceGetAttribute(&numSMs, cudaDevAttrMultiProcessorCount, devId);
 
-  int numBlocks=min((n-1)/TBlocksize+1, 64*numSMs);
+  int numBlocks=min((n-1)/TBlocksize+1, 16*numSMs);
 
   /* allocate device memory and data */
   T *d_idata = NULL;
@@ -102,6 +102,7 @@ void runReduceAddGPUsmem(unsigned n)
     reduceAddGPUsmem<TBlocksize><<<1, TBlocksize>>>(d_blocksums, d_odata, numBlocks);
     CHECK_CUDA(cudaEventRecord(cend));
     CHECK_CUDA(cudaEventSynchronize(cend));
+    CHECK_CUDA( cudaGetLastError() );
     cudaEventElapsedTime(&milliseconds, cstart, cend);
     if(milliseconds<min_ms)
       min_ms = milliseconds;

@@ -38,9 +38,7 @@ T reduce(TGroup group, T *x, int n) {
 
   int lane = my_block.thread_rank(); // index \in {0,blocksize-1}
 
-  //int i = 4 * blockIdx.x * TBlocksize + threadIdx.x;
-  //int i = 4 * my_block.group_index().x * TBlocksize + lane;
-  int i = 4 * blockIdx.x * TBlocksize + lane;
+  int i = blockIdx.x * TBlocksize + lane;
 
   sdata[lane] = 0;
 
@@ -49,9 +47,9 @@ T reduce(TGroup group, T *x, int n) {
   // --------
 
   // reduce per thread with increased ILP by 4x unrolling sum.
-  // the thread of our block reduces its 4 block-neighbored threads and advances by group-striding loop
-  while (i+3*TBlocksize < n) {
-    sdata[lane] += x[i] + x[i+TBlocksize] + x[i+2*TBlocksize] + x[i+3*TBlocksize];
+  // the thread of our block reduces its 4 grid-neighbored threads and advances by group-striding loop
+  while (i+3*group.size() < n) {
+    sdata[lane] += x[i] + x[i+group.size()] + x[i+2*group.size()] + x[i+3*group.size()];
     i += 4*group.size();
   }
 

@@ -6,7 +6,7 @@
 #include <stdexcept>
 #include <limits>
 
-
+// TBlocksize must be power-of-2
 template<int TBlocksize, typename T>
 __device__
 void reduce(int tid, T *x) {
@@ -21,15 +21,14 @@ void reduce(int tid, T *x) {
   }
 }
 
+// TBlocksize must be power-of-2
 template<int TBlocksize, typename T>
 __device__
 T reduce(int tid, T *x, int n) {
 
   __shared__ T sdata[TBlocksize];
 
-  //int i = 4 * blockIdx.x * TBlocksize + threadIdx.x;
-  //int i = 4 * my_block.group_index().x * TBlocksize + lane;
-  int i = 4 * blockIdx.x * TBlocksize + tid;
+  int i = blockIdx.x * TBlocksize + tid;
 
   sdata[tid] = 0;
 
@@ -38,9 +37,9 @@ T reduce(int tid, T *x, int n) {
   // --------
 
   // reduce per thread with increased ILP by 4x unrolling sum.
-  // the thread of our block reduces its 4 block-neighbored threads and advances by grid-striding loop
-  while (i+3*TBlocksize < n) {
-    sdata[tid] += x[i] + x[i+TBlocksize] + x[i+2*TBlocksize] + x[i+3*TBlocksize];
+  // the thread of our block reduces its 4 grid-neighbored threads and advances by grid-striding loop
+  while (i+3*gridDim.x*TBlocksize < n) {
+    sdata[tid] += x[i] + x[i+gridDim.x*TBlocksize] + x[i+2*gridDim.x*TBlocksize] + x[i+3*gridDim.x*TBlocksize];
     i += 4*gridDim.x*TBlocksize;
   }
 
@@ -71,10 +70,9 @@ void kernel_reduce(T* x, T* y, int n)
   // store block result to gmem
   if (threadIdx.x == 0)
     y[blockIdx.x] = block_result;
-//    y[my_block.group_index().x] = block_result;
 }
 
-
+// TBlocksize must be power-of-2
 template<typename T, int TRuns, int TBlocksize>
 void reduce(T init, size_t n, int dev) {
 
@@ -121,6 +119,7 @@ void reduce(T init, size_t n, int dev) {
 
     CHECK_CUDA( cudaEventRecord(cend, cstream) );
     CHECK_CUDA( cudaEventSynchronize(cend) );
+    CHECK_CUDA( cudaGetLastError() );
     CHECK_CUDA( cudaEventElapsedTime(&milliseconds, cstart, cend) );
     if(milliseconds<min_ms)
       min_ms = milliseconds;
@@ -145,10 +144,15 @@ void reduce(T init, size_t n, int dev) {
 
 }
 
-int main(void)
+int main(int argc, const char** argv)
 {
   int dev=0;
-  reduce<int, 5, 128>(1, 1<<28, dev);
+  int n = 0;
+  if(argc==2)
+    n = atoi(argv[1]);
+  if(n<2)
+    n = 1<<28;
+  reduce<int, 5, 128>(1, n, dev);
   CHECK_CUDA( cudaDeviceReset() );
   return 0;
 }
