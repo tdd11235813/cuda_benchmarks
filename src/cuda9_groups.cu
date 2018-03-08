@@ -18,12 +18,10 @@ __device__
 void reduce(thread_group g, T *x) {
 
 #pragma unroll
-  for(int bs=1024; bs>1; bs=bs/2) {
-    if( TBlocksize >= bs ) {
-      if(g.thread_rank() < bs/2)
-        x[g.thread_rank()] += x[g.thread_rank() + bs/2];
-      g.sync();
-    }
+  for(int bs=TBlocksize, bsup=(TBlocksize+1)/2; bs>1; bs=bs/2, bsup=(bs+1)/2) {
+    if(g.thread_rank() < bsup && g.thread_rank()+bsup < TBlocksize)
+      x[g.thread_rank()] += x[g.thread_rank() + bsup];
+    g.sync();
   }
 }
 
