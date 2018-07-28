@@ -1,4 +1,7 @@
 cmake_minimum_required (VERSION 2.8)
+
+
+
 find_package(CUDA REQUIRED)
 if("${CMAKE_CXX_COMPILER_ID}" STREQUAL "GNU")
   if(CUDA_VERSION_STRING VERSION_EQUAL 8.0)
@@ -31,7 +34,9 @@ list(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_30,code=sm_30)
 list(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_60,code=sm_60)
 #list(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_61,code=sm_61)
 #list(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_62,code=sm_62)
-list(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_70,code=sm_70)
+if(NOT CUDA_VERSION_STRING VERSION_LESS 9.0)
+  list(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_70,code=sm_70)
+endif()
 #list(APPEND CUDA_NVCC_FLAGS -gencode arch=compute_70,code=compute_70)
 
 
@@ -57,6 +62,17 @@ cuda_add_executable(pagesize_vert test_pagesize_vert.cu)
 cuda_add_executable(async_pcie test_async_pcie.cu)
 cuda_add_executable(caches test_caches.cu)
 cuda_add_executable(reduction-one2one reduction-one2one.cu)
+cuda_add_executable(cuda9_saxpy cuda9_saxpy.cu)
+
+
+find_package(MPI)
+
+if(MPI_FOUND)
+  include_directories(${MPI_INCLUDE_PATH})
+  set_source_files_properties(mpi-cuda-aware.cpp PROPERTIES CUDA_SOURCE_PROPERTY_FORMAT OBJ)
+  cuda_add_executable(mpi-cuda-aware mpi-cuda-aware.cpp)
+  target_link_libraries(mpi-cuda-aware ${MPI_LIBRARIES})
+endif()
 
 if(NOT CUDA_VERSION VERSION_LESS "9.0") # coop group examples require CC 6.0+
   cuda_add_executable(cuda9_groups cuda9_groups.cu)

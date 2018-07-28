@@ -2,14 +2,11 @@ cmake_minimum_required (VERSION 2.8)
 set(CMAKE_DISABLE_IN_SOURCE_BUILD ON)
 set(CMAKE_DISABLE_SOURCE_CHANGES  ON)
 set(CMAKE_COLOR_MAKEFILE ON)
-# And optionally
+# And optionally. You can trigger it by `make VERBOSE=1` as well
 #set(CMAKE_VERBOSE_MAKEFILE ON)
 
 if ("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
   message(SEND_ERROR "In-source builds are not allowed.")
-endif ()
-if (WIN32)
-  set(CMAKE_SHARED_LIBRARY_PREFIX "")
 endif ()
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR})

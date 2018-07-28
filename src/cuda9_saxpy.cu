@@ -67,8 +67,9 @@ void run_stride(T init, int n, int dev) {
 
   int numSMs;
   cudaDeviceGetAttribute(&numSMs, cudaDevAttrMultiProcessorCount, dev);
-  dim3 blocks( 1024/TBlocksize*numSMs*2*2 );
-	std::cout << "\trunning <<<" << blocks.x << ", " << TBlocksize << std::endl;
+  dim3 blocks( 64*numSMs );
+  //dim3 blocks( (n-1)/TBlocksize+1);
+  std::cout << "\trunning <<<" << blocks.x << ", " << TBlocksize << std::endl;
 
   std::vector<T> h_x(n), h_y(n), h_z(n);
   T* x;
@@ -144,7 +145,7 @@ void run_unroll(T init, int n, int dev) {
 
   int numSMs;
   cudaDeviceGetAttribute(&numSMs, cudaDevAttrMultiProcessorCount, dev);
-  dim3 blocks( n/TBlocksize);
+  dim3 blocks( (n-1)/TBlocksize+1);
 	std::cout << "\trunning <<<" << blocks.x << ", " << TBlocksize << std::endl;
 
   std::vector<T> h_x(n), h_y(n);
@@ -200,8 +201,8 @@ int main(int argc, const char** argv)
   if(n<2)
     n = 1<<28;
   const float init = 2.;
-  run_stride<float, 5, 512>(init, n, dev);
-  run_unroll<float, 5, 512>(init, n, dev);
+  run_unroll<float, 5, 128>(init, n, dev);
+  run_stride<float, 5, 128>(init, n, dev);
   CHECK_CUDA( cudaDeviceReset() );
   return 0;
 }
