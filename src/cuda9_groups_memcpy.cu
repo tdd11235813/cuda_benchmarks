@@ -24,9 +24,10 @@ T reduce(TGroup group, T *x, int n) {
 
   int lane = my_block.thread_rank(); // index \in {0,blocksize-1}
 
-  int i = blockIdx.x * TBlocksize + lane;
+  int i = blockIdx.x * TBlocksize + lane; // or: this_grid().thread_rank()
 
-  sdata[lane] = 0;
+  sdata[lane] = x[i];
+  i += group.size();
 
   // --------
   // Level 1: [multi] group reduce
@@ -60,7 +61,7 @@ T reduce(TGroup group, T *x, int n) {
   {
     bool cond = lane < bsup // only first half of block is working
                && (lane+bsup) < TBlocksize // index for second half must be in bounds
-               && (i+bsup)<n; // if elem in second half has been initialized before
+               && (this_grid().thread_rank()+bsup)<n; // if elem in second half has been initialized before
     if(cond)
     {
       sdata[lane] += sdata[lane + bsup];
@@ -77,12 +78,15 @@ void kernel_reduce(T* x, T* y, int n)
   auto grid = this_grid();
   thread_block my_block = this_thread_block();
 
+  if(grid.thread_rank()>=n)
+    return;
+
   T block_result = reduce<TBlocksize>(grid, x, n);
 
   // store block result to gmem
   if (my_block.thread_rank() == 0)
     y[blockIdx.x] = block_result;
-//    y[my_block.group_index().x] = block_result;
+// or: y[my_block.group_index().x] = block_result;
 
   // grid synchronisation
   grid.sync();
@@ -110,6 +114,9 @@ void kernel_reduce_multi(T* x, T* y, int n)
 {
   auto grid = this_multi_grid(); // ! // cannot be used by cudaLaunchCooperativeKernel (will not terminate)
   thread_block my_block = this_thread_block();
+
+  if(grid.thread_rank()>=n)
+    return;
 
   T block_result = reduce<TBlocksize>(grid, x, n);
 
