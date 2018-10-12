@@ -13,18 +13,6 @@ enum class MultiGrid {
   NO, YES
 };
 
-template<int TBlocksize, typename T>
-__device__
-void reduce(thread_group g, T *x) {
-
-#pragma unroll
-  for(int bs=TBlocksize, bsup=(TBlocksize+1)/2; bs>1; bs=bs/2, bsup=(bs+1)/2) {
-    if(g.thread_rank() < bsup && g.thread_rank()+bsup < TBlocksize)
-      x[g.thread_rank()] += x[g.thread_rank() + bsup];
-    g.sync();
-  }
-}
-
 template<int TBlocksize, typename TGroup, typename T>
 __device__
 T reduce(TGroup group, T *x, int n) {
@@ -63,12 +51,25 @@ T reduce(TGroup group, T *x, int n) {
   // Level 2: block + warp reduce
   // --------
 
-  reduce<TBlocksize>(my_block, sdata);
-
+#pragma unroll
+  for(unsigned int bs=TBlocksize,
+        bsup=(TBlocksize+1)/2; // ceil(TBlocksize/2.0)
+      bs>1;
+      bs=bs/2,
+        bsup=(bs+1)/2) // ceil(bs/2.0)
+  {
+    bool cond = lane < bsup // only first half of block is working
+               && (lane+bsup) < TBlocksize // index for second half must be in bounds
+               && (i+bsup)<n; // if elem in second half has been initialized before
+    if(cond)
+    {
+      sdata[lane] += sdata[lane + bsup];
+    }
+    my_block.sync();
+  }
   return sdata[0];
 }
 
-// TBlocksize must be power-of-2
 template<int TBlocksize, typename T>
 __global__
 void kernel_reduce(T* x, T* y, int n)

@@ -8,21 +8,6 @@
 
 template<int TBlocksize, typename T>
 __device__
-void reduce(int tid, T *x) {
-
-#pragma unroll
-  for(int bs=TBlocksize, bsup=(TBlocksize+1)/2;
-          bs>1;
-          bs=bs/2, bsup=(bs+1)/2) {
-    if(tid < bsup && tid+bsup<TBlocksize) {
-      x[tid] += x[tid + bsup];
-    }
-    __syncthreads();
-  }
-}
-
-template<int TBlocksize, typename T>
-__device__
 T reduce(int tid, T *x, int n) {
 
   __shared__ T sdata[TBlocksize];
@@ -54,7 +39,22 @@ T reduce(int tid, T *x, int n) {
   // Level 2: block + warp reduce
   // --------
 
-  reduce<TBlocksize>(tid, sdata);
+#pragma unroll
+  for(unsigned int bs=TBlocksize,
+        bsup=(TBlocksize+1)/2; // ceil(TBlocksize/2.0)
+      bs>1;
+      bs=bs/2,
+        bsup=(bs+1)/2) // ceil(bs/2.0)
+  {
+    bool cond = tid < bsup // only first half of block is working
+               && (tid+bsup) < TBlocksize // index for second half must be in bounds
+               && (blockIdx.x*TBlocksize+tid+bsup)<n; // if elem in second half has been initialized before
+    if(cond)
+    {
+      sdata[tid] += sdata[tid + bsup];
+    }
+    __syncthreads();
+  }
 
   return sdata[0];
 }
