@@ -30,7 +30,7 @@
  * This requires mpirun to launch this program.
  */
 //#define ENV_LOCAL_RANK "MV2_COMM_WORLD_LOCAL_RANK"
-#define ENV_LOCAL_RANK "OMPI_COMM_WORLD_LOCAL_RANK"
+//#define ENV_LOCAL_RANK "OMPI_COMM_WORLD_LOCAL_RANK"
 
 // Shut down MPI cleanly if something goes wrong
 void abort_mpi(int err)
@@ -104,8 +104,11 @@ void SetDeviceBeforeInit()
   int rank = 0, devCount = 0;
 
   // We extract the local rank initialization using an environment variable
-  if ((localRankStr = getenv(ENV_LOCAL_RANK)) != NULL)
-  {
+  if ((localRankStr = getenv("OMPI_COMM_WORLD_LOCAL_RANK")) != NULL) {
+    rank = atoi(localRankStr);
+  } else if ((localRankStr = getenv("PMI_RANK")) != NULL) {
+    rank = atoi(localRankStr);
+  } else if ((localRankStr = getenv("MV2_COMM_WORLD_LOCAL_RANK")) != NULL) {
     rank = atoi(localRankStr);
   } else {
     throw std::runtime_error("Local MPI rank environment variable required.");
@@ -302,7 +305,7 @@ int main(int argc, char *argv[])
 //        = static_cast<double>(repetitions)
 //        * (1e-9 * static_cast<double>(data_size_per_node) / wtime); // GB/s
 
-//      std::cout << i <<": "<<bandwidth<<" GB/s\n";
+//      std::cout << rank_recv <<": "<<times_node[rank_recv]<<" s\n";
     }
 
     CHECK_MPI(MPI_Barrier(MPI_COMM_WORLD));
