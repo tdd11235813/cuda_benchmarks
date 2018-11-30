@@ -81,7 +81,6 @@ if(NOT CUDA_VERSION VERSION_LESS "9.0") # coop group examples require CC 6.0+
   cuda_add_executable(cuda9_groups cuda9_groups.cu)
   cuda_add_executable(cuda9_groups_memcpy cuda9_groups_memcpy.cu)
   cuda_add_executable(cuda9_without_groups cuda9_without_groups.cu)
-  cuda_add_executable(cuda9_without_groups_optimized cuda9_without_groups_optimized.cu)
 
   if(NOT CUDA_cudadevrt_LIBRARY)
     cuda_find_library_local_first(CUDA_cudadevrt_LIBRARY cudadevrt "\"cudadevrt\" library")

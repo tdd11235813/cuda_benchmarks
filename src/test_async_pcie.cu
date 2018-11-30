@@ -11,6 +11,7 @@ void perform_test(int n) {
   CHECK_CUDA(cudaStreamCreate(&stream1));
 
   size_t bytes = n*sizeof(T);
+  std::cout << "n = " << n << " (" << 1.0*bytes/1048576 << " MB)\n";
 
   TimerCPU cpustart;
   double cpums;
@@ -103,11 +104,15 @@ void perform_test(int n) {
 
 int main(int argc, char** argv)
 {
-	CHECK_CUDA(cudaSetDevice(0));
 
   int n = 1<<20;
-  if(argc==2)
+  int dev = 0;
+  if(argc>=2)
     n = atoi(argv[1]);
+  if(argc==3)
+    dev = atoi(argv[2]);
+
+	CHECK_CUDA(cudaSetDevice(dev));
   perform_test<int>(n);
 
 
