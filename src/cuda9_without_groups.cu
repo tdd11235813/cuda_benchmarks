@@ -8,12 +8,12 @@
 
 // same number of registers are used when code is used in place
 // (20 regs @GV100)
-template<std::uint32_t TBlocksize, typename T>
+template<int TBlocksize, typename T>
 __device__
-void reduce_block(T *x, std::uint32_t n) {
+void reduce_block(T *x, int n) {
 
   #pragma unroll
-  for(std::uint32_t bs=TBlocksize,
+  for(int bs=TBlocksize,
         bsup=(TBlocksize+1)/2; // ceil(TBlocksize/2.0)
       bs>1;
       bs=bs/2,
@@ -21,7 +21,7 @@ void reduce_block(T *x, std::uint32_t n) {
   {
     bool cond = threadIdx.x < bsup // only first half of block is working
                && (threadIdx.x+bsup) < TBlocksize // index for second half must be in bounds
-               && (blockIdx.x*TBlocksize+threadIdx.x+bsup)<n; // if elem in second half has been initialre
+               && (blockIdx.x*TBlocksize+threadIdx.x+bsup)<n; // if elem in second half has been initialized before
     if(cond)
     {
       x[threadIdx.x] += x[threadIdx.x + bsup];
@@ -30,13 +30,13 @@ void reduce_block(T *x, std::uint32_t n) {
   }
 }
 
-template<std::uint32_t TBlocksize, typename T>
+template<int TBlocksize, typename T>
 __device__
-T reduce(std::uint32_t tid, T *x, std::uint32_t n) {
+T reduce(int tid, T *x, int n) {
 
   __shared__ T sdata[TBlocksize];
 
-  std::uint32_t i = blockIdx.x * TBlocksize + tid;
+  int i = blockIdx.x * TBlocksize + tid;
 
   sdata[tid] = 0;
 
@@ -66,9 +66,9 @@ T reduce(std::uint32_t tid, T *x, std::uint32_t n) {
   return sdata[0];
 }
 
-template<std::uint32_t TBlocksize, typename T>
+template<int TBlocksize, typename T>
 __global__
-void kernel_reduce(T* x, T* y, std::uint32_t n)
+void kernel_reduce(T* x, T* y, int n)
 {
   T block_result = reduce<TBlocksize>(threadIdx.x, x, n);
 
@@ -78,8 +78,8 @@ void kernel_reduce(T* x, T* y, std::uint32_t n)
 }
 
 // TBlocksize must be power-of-2
-template<typename T, std::uint32_t TRuns, std::uint32_t TBlocksize>
-void reduce(T init, size_t n, std::uint32_t dev) {
+template<typename T, int TRuns, int TBlocksize>
+void reduce(T init, size_t n, int dev) {
 
   CHECK_CUDA( cudaSetDevice(dev) );
   cudaDeviceProp prop;
@@ -94,7 +94,7 @@ void reduce(T init, size_t n, std::uint32_t dev) {
   std::cout << getCUDADeviceInformations(dev).str();
   std::cout << std::endl;
 
-  const std::uint32_t nr_dev = 1;
+  const int nr_dev = 1;
 
   int numSMs;
   const int nbsm = 16;
@@ -113,7 +113,7 @@ void reduce(T init, size_t n, std::uint32_t dev) {
   T* y;
   CHECK_CUDA( cudaMalloc(&x, n*sizeof(T)) );
   CHECK_CUDA( cudaMalloc(&y, nr_dev*blocks.x*sizeof(T)) );
-  for (std::uint32_t i = 0; i < n; i++) {
+  for (int i = 0; i < n; i++) {
     h_x[i] = init;
   }
   CHECK_CUDA( cudaMemcpy( x, h_x, n*sizeof(T), cudaMemcpyHostToDevice) );
@@ -122,7 +122,7 @@ void reduce(T init, size_t n, std::uint32_t dev) {
   float milliseconds = 0;
   float min_ms = std::numeric_limits<float>::max();
 
-  for(std::uint32_t r=0; r<TRuns; ++r) {
+  for(int r=0; r<TRuns; ++r) {
     CHECK_CUDA(cudaEventRecord(cstart, cstream));
 
     kernel_reduce<TBlocksize><<<blocks, TBlocksize, 0, cstream>>>(x, y, n);
@@ -159,13 +159,13 @@ int main(int argc, const char** argv)
 {
   static constexpr unsigned int REPETITIONS = 5;
 
-  std::uint32_t dev=0;
-  std::uint32_t n = 0;
+  int dev=0;
+  int n = 0;
   if(argc==2)
     n = atoi(argv[1]);
   if(n<2)
     n = 1<<28;
-  reduce<std::uint32_t, REPETITIONS, 128>(1, n, dev);
+  reduce<int, REPETITIONS, 128>(1, n, dev);
   CHECK_CUDA( cudaDeviceReset() );
   return 0;
 }
