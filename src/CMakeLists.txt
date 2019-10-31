@@ -66,6 +66,7 @@ cuda_add_executable(cuda9_saxpy cuda9_saxpy.cu)
 
 set_source_files_properties(cuda-p2p.cpp PROPERTIES CUDA_SOURCE_PROPERTY_FORMAT OBJ)
 cuda_add_executable(cuda-p2p cuda-p2p.cpp)
+cuda_add_executable(cuda-sdk-p2p cuda-sdk-p2p.cu)
 
 
 find_package(MPI)
