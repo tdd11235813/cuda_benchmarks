@@ -543,7 +543,7 @@ int main(int argc, char **argv)
         printf("Device: %d, %s, pciBusID: %x, pciDeviceID: %x, pciDomainID:%x\n", i, prop.name, prop.pciBusID, prop.pciDeviceID, prop.pciDomainID);
     }
 
-    checkP2Paccess(numGPUs);
+    //checkP2Paccess(numGPUs);
 
     //Check peer-to-peer connectivity
     printf("P2P Connectivity Matrix\n");

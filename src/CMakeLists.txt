@@ -78,7 +78,7 @@ if(MPI_FOUND)
   target_link_libraries(mpi-cuda-aware ${MPI_LIBRARIES})
 endif()
 
-if(NOT CUDA_VERSION VERSION_LESS "9.0") # coop group examples require CC 6.0+
+if(TEST_COOP_GROUPS AND NOT CUDA_VERSION VERSION_LESS "9.0") # coop group examples require CC 6.0+
   cuda_add_executable(cuda9_groups cuda9_groups.cu)
   cuda_add_executable(cuda9_groups_memcpy cuda9_groups_memcpy.cu)
   cuda_add_executable(cuda9_without_groups cuda9_without_groups.cu)
